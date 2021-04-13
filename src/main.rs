@@ -11,6 +11,7 @@ fn main() {
         "editboot" => edit_bootloader(),
         "newfile" => newfile(),
         "editfile" => editfile(),
+        "lsroot" => list_root(),
         _ => println!("Bruhhh"),
     }
     println!("Finished!");
@@ -126,6 +127,28 @@ fn newfile() {
     println!("Wrote new file to FAT12 Image!");
 }
 
+fn list_root() {
+    // cargo run lsroot image.bin
+    // Get cmdline args
+    let image_file = std::env::args()
+        .nth(2)
+        .expect("No image filename provided!");
+    let bytes = get_image_data(&image_file);
+
+    println!("Listing files in the root directory:");
+    println!("-----------------------");
+
+    for root_entry_index in 0..ROOT_ENTRIES {
+        let root_entry = read_root_entry(&bytes, root_entry_index);
+        if root_entry[0] != 0 {
+            let filename = String::from_utf8(root_entry[0..12].to_vec()).unwrap();
+            println!("{}", filename);
+        }
+    }
+
+    println!("-----------------------");
+}
+
 fn append_to_root_dir(mut bytes: Vec<u8>, newfilename: String, first_entry: usize) -> Vec<u8> {
     let root_start = (RESERVED_SECTORS + NUMBER_FATS * SECTORS_PER_FAT) * BYTES_PER_SECTOR;
     let root_entry = get_first_free_root_entry(&bytes);
@@ -161,7 +184,8 @@ fn append_to_root_dir(mut bytes: Vec<u8>, newfilename: String, first_entry: usiz
 fn get_first_free_root_entry(bytes: &Vec<u8>) -> usize {
     for root_entry_index in 0..ROOT_ENTRIES {
         let root_entry = read_root_entry(&bytes, root_entry_index);
-        if root_entry == 0 {
+        // ! This is a hack, figure out how to test if entry is free
+        if root_entry[0] == 0 {
             return root_entry_index;
         }
     }
@@ -171,12 +195,11 @@ fn get_first_free_root_entry(bytes: &Vec<u8>) -> usize {
 }
 
 /// Returns 32 bit entry
-fn read_root_entry(bytes: &Vec<u8>, root_entry: usize) -> usize {
+fn read_root_entry(bytes: &Vec<u8>, root_entry: usize) -> Vec<u8> {
     let root_start = (RESERVED_SECTORS + NUMBER_FATS * SECTORS_PER_FAT) * BYTES_PER_SECTOR;
     let entry_start = root_start + BYTES_PER_ROOT_ENTRY * root_entry;
 
-    let root_entry_bytes = bytes[entry_start..entry_start + 4].to_vec();
-    vec_to_u32(root_entry_bytes) as usize
+    bytes[entry_start..entry_start + BYTES_PER_ROOT_ENTRY].to_vec()
 }
 
 fn vec_to_u32(v: Vec<u8>) -> u32 {
@@ -236,7 +259,7 @@ fn write_cluster(mut bytes: Vec<u8>, cluster_byte: usize, cluster_to_write: Vec<
 /// Returns first byte of the cluster
 fn get_cluster_from_entry(entry: usize) -> usize {
     (RESERVED_SECTORS + (SECTORS_PER_FAT * NUMBER_FATS) + entry) * BYTES_PER_SECTOR
-        + (ROOT_ENTRIES as f64 * BYTES_PER_ENTRY) as usize
+        + ROOT_ENTRIES * BYTES_PER_ROOT_ENTRY
 }
 
 fn get_next_free_cluster(bytes: &Vec<u8>, current_entry: usize) -> usize {
