@@ -1,77 +1,102 @@
-use std::fs::{File, OpenOptions};
-use std::io::prelude::*;
+use shell_state::ShellState;
+use std::fs::File;
+use std::io;
+use std::io::*;
+
+mod shell_state;
 
 fn main() {
-    // First cmdline arg
-    let operation = std::env::args().nth(1).expect("No operation provided!");
+    // Stores the state of the shell (cwd, image bytes, etc)
+    let mut shell_state = ShellState::new();
 
-    // Each arg has its own function
-    match operation.as_str() {
-        "new" => create_new_image(),
-        "editboot" => edit_bootloader(),
-        "newfile" => newfile(),
-        "editfile" => editfile(),
-        "lsroot" => list_root(),
-        _ => println!("Bruhhh"),
+    loop {
+        print!("> ");
+        io::stdout().flush().unwrap();
+
+        let mut input = String::new();
+        io::stdin()
+            .read_line(&mut input)
+            .expect("Couldn't read user input!");
+        let args: Vec<&str> = input.trim().split(' ').collect();
+
+        // Each arg has its own function
+        shell_state = match args[0] {
+            "open" => open_image(shell_state, args),
+            "new" => create_new_image(shell_state, args),
+            "editboot" => edit_bootloader(shell_state, args),
+            "newfile" => newfile(shell_state, args),
+            "editfile" => editfile(shell_state, args),
+            "lsroot" => list_root(shell_state, args),
+            "save" => {
+                println!("Saving file...");
+                shell_state = shell_state.save_file();
+                println!("File saved!");
+                shell_state
+            }
+            "exit" => {
+                break;
+            }
+            _ => {
+                println!("Invalid function.");
+                shell_state
+            }
+        };
     }
     println!("Finished!");
 }
 
-fn create_new_image() {
+fn open_image(shell_state: ShellState, args: Vec<&str>) -> ShellState {
+    let image_filename = get_arg(&args, 1).expect("Couldn't open image file!");
+    shell_state.open_file(image_filename)
+}
+
+fn create_new_image(shell_state: ShellState, args: Vec<&str>) -> ShellState {
     // Get cmdline args
-    let filename = std::env::args().nth(2).expect("No filename provided!");
-    let size = std::env::args().nth(3).expect("No size provided!");
-    let size_in_mb: usize = size.parse().expect("Size isn't an integer!");
+    let filename = get_arg(&args, 1).expect("No filename provided!");
+    let size_str = get_arg(&args, 2).expect("No size provided!");
+
+    // Parse size string
+    let size_in_mb: usize = size_str.parse().expect("Size isn't an integer!");
 
     // Create the file
-    let file = File::create(filename).expect("Can't create file!");
+    let file = File::create(&filename).expect("Can't create file!");
 
     // Setting the length to longer than the file is just fills it with 0's
     file.set_len(((2 as usize).pow(20) * size_in_mb) as u64)
         .expect("Couldn't set file length");
 
-    println!("Created file!")
+    println!("Created file!");
+
+    shell_state.open_file(filename)
 }
 
-fn edit_bootloader() {
+fn edit_bootloader(mut shell_state: ShellState, args: Vec<&str>) -> ShellState {
     // Get cmdline args
-    let filename = std::env::args().nth(2).expect("No filename provided!");
-    let bootloader = std::env::args().nth(3).expect("No bootloader provided!");
+    let bootloader_filename = get_arg(&args, 1).expect("No bootloader filename provided!");
 
     // std::fs::read returns a vector of u8's
-    let mut bytes = std::fs::read(filename.clone()).expect("Can't read the image file!");
-    let boot_bytes = std::fs::read(bootloader).expect("Can't read the bootloader file!");
+    let boot_bytes = std::fs::read(bootloader_filename).expect("Can't read the bootloader file!");
 
     // Make sure that the boot sector is only 512 bytes
     println!("Boot bytes len: {}", boot_bytes.len());
     assert_eq!(boot_bytes.len(), 512);
 
     // Replace first 512 bytes with boot sector
-    bytes.splice(..512, boot_bytes);
+    shell_state.bytes.splice(..512, boot_bytes);
 
-    // Opening a file with truncate will replace contents
-    let mut file = OpenOptions::new()
-        .write(true)
-        .truncate(true)
-        .open(filename)
-        .expect("Can't open the image file!");
-    file.write(&bytes).expect("Can't write data to file!");
+    println!("Attached bootsector!");
 
-    println!("Attached bootsector!")
+    shell_state
 }
 
-fn newfile() {
-    // cargo run newfile image.bin boot.bin
+fn newfile(mut shell_state: ShellState, args: Vec<&str>) -> ShellState {
+    // newfile image.bin testfile.txt
     // Get cmdline args
-    let image_file = std::env::args()
-        .nth(2)
-        .expect("No image filename provided!");
-    let newfile: String = std::env::args().nth(3).expect("No new file provided!");
+    let newfile: String = get_arg(&args, 1).expect("No new file provided!");
 
-    let mut bytes = get_image_data(&image_file);
     let newfile_bytes = std::fs::read(newfile.clone()).expect("Can't read the image file!");
 
-    let filename_extension = std::env::args().nth(4).expect("No new file name provided!");
+    let filename_extension = get_arg(&args, 2).expect("No new file name provided!");
 
     // newfile_bytes.len (ceildiv) BYTES_PER_SECTOR
     let newfile_sectors = (newfile_bytes.len() + BYTES_PER_SECTOR - 1) / BYTES_PER_SECTOR;
@@ -82,7 +107,7 @@ fn newfile() {
     // Is there more data left?
     while sectors_stored < newfile_sectors {
         //  Yes: get next free cluster
-        let next_free_cluster = get_next_free_cluster(&bytes, last_fat_entry);
+        let next_free_cluster = get_next_free_cluster(&shell_state.bytes, last_fat_entry);
 
         if sectors_stored == 0 {
             first_entry = next_free_cluster;
@@ -98,11 +123,12 @@ fn newfile() {
 
             let sector = get_cluster_from_new_file(&newfile_bytes, sectors_stored);
 
-            bytes = write_cluster(bytes, cluster_byte, sector);
+            shell_state.bytes = write_cluster(shell_state.bytes, cluster_byte, sector);
 
             // set last FAT entry to new cluster index
             if last_fat_entry != 0 && last_fat_entry != next_free_cluster {
-                bytes = write_to_fat(bytes, next_free_cluster, last_fat_entry);
+                shell_state.bytes =
+                    write_to_fat(shell_state.bytes, next_free_cluster, last_fat_entry);
             }
 
             // update last entry and keep looping
@@ -111,35 +137,22 @@ fn newfile() {
         }
     }
     //  No: set last FAT entry to EOF
-    bytes = write_to_fat(bytes, 0xFFF, last_fat_entry);
+    shell_state.bytes = write_to_fat(shell_state.bytes, 0xFFF, last_fat_entry);
 
     // Write to the root directory
-    bytes = append_to_root_dir(bytes, filename_extension, first_entry);
-
-    // Opening a file with truncate will replace contents
-    let mut file = OpenOptions::new()
-        .write(true)
-        .truncate(true)
-        .open(image_file)
-        .expect("Can't open the image file!");
-    file.write(&bytes).expect("Can't write data to file!");
+    shell_state.bytes = append_to_root_dir(shell_state.bytes, filename_extension, first_entry);
 
     println!("Wrote new file to FAT12 Image!");
+
+    shell_state
 }
 
-fn list_root() {
-    // cargo run lsroot image.bin
-    // Get cmdline args
-    let image_file = std::env::args()
-        .nth(2)
-        .expect("No image filename provided!");
-    let bytes = get_image_data(&image_file);
-
+fn list_root(shell_state: ShellState, _args: Vec<&str>) -> ShellState {
     println!("Listing files in the root directory:");
     println!("-----------------------");
 
     for root_entry_index in 0..ROOT_ENTRIES {
-        let root_entry = read_root_entry(&bytes, root_entry_index);
+        let root_entry = read_root_entry(&shell_state.bytes, root_entry_index);
         if root_entry[0] != 0 {
             let filename = String::from_utf8(root_entry[0..12].to_vec()).unwrap();
             println!("{}", filename);
@@ -147,6 +160,7 @@ fn list_root() {
     }
 
     println!("-----------------------");
+    shell_state
 }
 
 fn append_to_root_dir(mut bytes: Vec<u8>, newfilename: String, first_entry: usize) -> Vec<u8> {
@@ -200,10 +214,6 @@ fn read_root_entry(bytes: &Vec<u8>, root_entry: usize) -> Vec<u8> {
     let entry_start = root_start + BYTES_PER_ROOT_ENTRY * root_entry;
 
     bytes[entry_start..entry_start + BYTES_PER_ROOT_ENTRY].to_vec()
-}
-
-fn vec_to_u32(v: Vec<u8>) -> u32 {
-    ((v[0] as u32) << 24) + ((v[1] as u32) << 16) + ((v[2] as u32) << 8) + (v[3] as u32)
 }
 
 fn write_to_fat(mut bytes: Vec<u8>, entry_num: usize, last_entry_num: usize) -> Vec<u8> {
@@ -300,11 +310,8 @@ fn get_fat_entry(bytes: &Vec<u8>, entry_num: usize) -> usize {
     }
 }
 
-fn editfile() {}
-
-/// Read file as bytes
-fn get_image_data(filename: &String) -> Vec<u8> {
-    std::fs::read(filename).expect("Can't read the image file!")
+fn editfile(shell_state: ShellState, _args: Vec<&str>) -> ShellState {
+    shell_state
 }
 
 // const OEM: &str = "My OS   ";
@@ -329,3 +336,14 @@ const SECTORS_PER_FAT: usize = 9;
 const BITS_PER_ENTRY: usize = 12;
 const BYTES_PER_ENTRY: f64 = 3.0 / 2.0;
 const BYTES_PER_ROOT_ENTRY: usize = 32;
+
+fn get_arg(args: &Vec<&str>, argnum: usize) -> Result<String> {
+    if args.len() > argnum {
+        return Ok(args[argnum].to_owned());
+    } else {
+        return Err(std::io::Error::new(
+            ErrorKind::InvalidInput,
+            "Not enough arguments!",
+        ));
+    }
+}
