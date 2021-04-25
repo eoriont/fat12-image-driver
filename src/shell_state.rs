@@ -4,7 +4,7 @@ use std::io::Write;
 pub struct ShellState {
   image_filename: String,
   pub bytes: Vec<u8>,
-  cwd: usize,
+  cwd_cluster: usize,
   is_file_open: bool,
 }
 
@@ -13,7 +13,7 @@ impl ShellState {
     ShellState {
       image_filename: String::default(),
       bytes: vec![],
-      cwd: 0,
+      cwd_cluster: 0,
       is_file_open: false,
     }
   }
@@ -24,7 +24,7 @@ impl ShellState {
   }
 
   pub fn set_cwd(mut self, cwd: usize) -> Self {
-    self.cwd = cwd;
+    self.cwd_cluster = cwd;
     self
   }
 
