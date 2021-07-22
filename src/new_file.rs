@@ -1,5 +1,5 @@
 use crate::bios_parameter_block::{
-    BITS_PER_FAT_ENTRY, BYTES_PER_ROOT_ENTRY, BYTES_PER_SECTOR, NUMBER_FATS, RESERVED_SECTORS,
+    BITS_PER_FAT_ENTRY, BYTES_PER_DIRECTORY_ENTRY, BYTES_PER_SECTOR, NUMBER_FATS, RESERVED_SECTORS,
     ROOT_ENTRIES, SECTORS_PER_FAT,
 };
 use crate::fat_section_util::{get_fat_entry, write_to_fat};
@@ -58,7 +58,8 @@ pub fn newfile(mut shell_state: ShellState, args: Vec<&str>) -> ShellState {
     shell_state.bytes = write_to_fat(shell_state.bytes, 0xFFF, last_fat_entry);
 
     // Write to the root directory
-    shell_state.bytes = append_to_root_dir(shell_state.bytes, filename_extension, first_entry);
+    shell_state.bytes =
+        append_to_root_dir(shell_state.bytes, filename_extension, first_entry, false);
 
     println!("Wrote new file to FAT12 Image!");
 
@@ -95,12 +96,12 @@ fn write_cluster(mut bytes: Vec<u8>, cluster_byte: usize, cluster_to_write: Vec<
 }
 
 /// Returns first byte of the cluster
-fn get_cluster_from_entry(entry: usize) -> usize {
+pub fn get_cluster_from_entry(entry: usize) -> usize {
     (RESERVED_SECTORS + (SECTORS_PER_FAT * NUMBER_FATS) + entry) * BYTES_PER_SECTOR
-        + ROOT_ENTRIES * BYTES_PER_ROOT_ENTRY
+        + ROOT_ENTRIES * BYTES_PER_DIRECTORY_ENTRY
 }
 
-fn get_next_free_cluster(bytes: &Vec<u8>, current_entry: usize) -> usize {
+pub fn get_next_free_cluster(bytes: &Vec<u8>, current_entry: usize) -> usize {
     // Look through the FAT for first 0 entry
     let fat_start = RESERVED_SECTORS * BYTES_PER_SECTOR;
     let fat_end = fat_start + SECTORS_PER_FAT * BYTES_PER_SECTOR;

@@ -10,11 +10,11 @@ pub fn get_fat_entry(bytes: &Vec<u8>, entry_num: usize) -> usize {
     if entry_num % 2 == 0 {
         // If entry is even
         // xxxx xxxx xxxx 0000
-        return ((untrimmed_bytes[0] as usize) << 4) + (untrimmed_bytes[1] >> 4) as usize;
+        ((untrimmed_bytes[0] as usize) << 4) + (untrimmed_bytes[1] >> 4) as usize
     } else {
         // if entry is odd
         // 0000 xxxx xxxx xxxx
-        return (((untrimmed_bytes[0] & 0b00001111) as usize) << 8) + untrimmed_bytes[1] as usize;
+        (((untrimmed_bytes[0] & 0b00001111) as usize) << 8) + untrimmed_bytes[1] as usize
     }
 }
 

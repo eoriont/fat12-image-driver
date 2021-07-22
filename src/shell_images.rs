@@ -26,3 +26,7 @@ pub fn create_new_image(shell_state: ShellState, args: Vec<&str>) -> ShellState 
 
     shell_state.open_file(filename)
 }
+
+pub fn close_image(_shell_state: ShellState, _args: Vec<&str>) -> ShellState {
+    ShellState::new()
+}

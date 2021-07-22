@@ -19,4 +19,4 @@ pub const VOLUME_LABEL: &str = "MOS FLOPPY ";
 pub const FILE_SYSTEM: &str = "FAT12   ";
 pub const BITS_PER_FAT_ENTRY: usize = 12;
 pub const BYTES_PER_ENTRY: f64 = 3.0 / 2.0;
-pub const BYTES_PER_ROOT_ENTRY: usize = 32;
+pub const BYTES_PER_DIRECTORY_ENTRY: usize = 32;

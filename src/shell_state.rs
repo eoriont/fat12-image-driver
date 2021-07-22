@@ -4,8 +4,9 @@ use std::io::Write;
 pub struct ShellState {
   image_filename: String,
   pub bytes: Vec<u8>,
-  cwd_cluster: usize,
-  is_file_open: bool,
+  cwd_fat_entry: usize,
+  is_image_file_open: bool,
+  is_root: bool,
 }
 
 impl ShellState {
@@ -13,8 +14,9 @@ impl ShellState {
     ShellState {
       image_filename: String::default(),
       bytes: vec![],
-      cwd_cluster: 0,
-      is_file_open: false,
+      cwd_fat_entry: 0,
+      is_image_file_open: false,
+      is_root: true,
     }
   }
 
@@ -24,8 +26,12 @@ impl ShellState {
   }
 
   pub fn set_cwd(mut self, cwd: usize) -> Self {
-    self.cwd_cluster = cwd;
+    self.cwd_fat_entry = cwd;
     self
+  }
+
+  pub fn get_cwd(&self) -> usize {
+    self.cwd_fat_entry
   }
 
   pub fn open_file(mut self, filename: String) -> Self {
@@ -38,7 +44,7 @@ impl ShellState {
     self.image_filename = filename;
 
     // Set flag
-    self.is_file_open = true;
+    self.is_image_file_open = true;
 
     self
   }
@@ -53,5 +59,9 @@ impl ShellState {
     file.write(&self.bytes).expect("Can't write data to file!");
 
     self
+  }
+
+  pub fn is_root(&self) -> bool {
+    self.is_root
   }
 }
